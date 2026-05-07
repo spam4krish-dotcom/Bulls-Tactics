@@ -325,6 +325,15 @@ text { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 .animated-pitch .anim-player,
 .animated-pitch .player-group {
   transition: transform 1.7s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-box: fill-box;
+}
+/* Performance: only promote to GPU layer when actually visible (saves mobile battery/RAM) */
+.animated-pitch.in-view .anim-player,
+.animated-pitch.in-view .player-group {
+  will-change: transform;
+}
+.animated-pitch.in-view circle[id^="ball-"] {
+  will-change: cx, cy;
 }
 .animated-pitch .pass-path {
   transition: opacity 0.5s ease-in;
@@ -333,8 +342,19 @@ text { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
   opacity: 0;
   transition: opacity 0.5s ease-in 0.7s;
 }
+.animated-pitch.in-view .arrow {
+  will-change: opacity;
+}
 .animated-pitch.playing .arrow {
   opacity: 0.85;
+}
+/* Respect user accessibility preferences */
+@media (prefers-reduced-motion: reduce) {
+  .animated-pitch .anim-player,
+  .animated-pitch .player-group,
+  .animated-pitch circle[id^="ball-"] {
+    transition: none !important;
+  }
 }
 .animated-pitch .ball-trail {
   opacity: 0;
@@ -570,11 +590,45 @@ text { font-family: 'JetBrains Mono', monospace; font-weight: 700; }
 }
 
 /* Opposition text card (replaces the old static-card layout) */
-.opp-text-card {
+.opp-text-details {
+  margin-bottom: 14px;
   background: var(--panel-2);
   border-radius: 8px;
-  padding: 14px;
-  margin-bottom: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.opp-text-summary {
+  cursor: pointer;
+  padding: 12px 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.78rem;
+  color: var(--accent);
+  letter-spacing: 0.05em;
+  list-style: none;
+  user-select: none;
+  position: relative;
+  padding-right: 40px;
+}
+.opp-text-summary::-webkit-details-marker { display: none; }
+.opp-text-summary::after {
+  content: '+';
+  position: absolute;
+  right: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.3rem;
+  color: var(--accent);
+  font-family: serif;
+  line-height: 1;
+}
+.opp-text-details[open] .opp-text-summary::after { content: '−'; }
+.opp-text-summary:hover {
+  background: rgba(249, 115, 22, 0.05);
+}
+.opp-text-card {
+  background: transparent;
+  border-radius: 0 0 8px 8px;
+  padding: 0 14px 14px 14px;
+  margin-bottom: 0;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
@@ -3326,20 +3380,42 @@ function playSequence(id) {
         }
       }
 
-      // Pulse marker on a player (won/lost ball indicator)
-      if (frame.pulse) {
-        const pos = frame.players[frame.pulse];
-        if (pos && pulse) {
-          pulse.setAttribute('cx', pos[0]);
-          pulse.setAttribute('cy', pos[1]);
+      // PULSE: universal rule — pulse follows the ball every frame, unless explicitly suppressed
+      // Special cases:
+      //   pulse_them: red ring (lost ball indicator) at given coords
+      //   no_pulse: skip the pulse entirely
+      //   pulse: name a specific player (yellow ring)
+      //   pulse_at: explicit coords (yellow ring) — for opposition ball-carriers
+      //   default: yellow ring on the ball position
+      if (pulse) {
+        if (frame.pulse_them) {
+          pulse.setAttribute('cx', frame.pulse_them[0]);
+          pulse.setAttribute('cy', frame.pulse_them[1]);
+          pulse.setAttribute('stroke', '#ef4444');
           pulse.setAttribute('opacity', '0.9');
-          // Pulse animation
           setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0.4'); }, 400);
           setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0.9'); }, 800);
-          setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0'); }, 1400);
+        } else if (frame.no_pulse) {
+          pulse.setAttribute('opacity', '0');
+        } else {
+          let px, py;
+          if (frame.pulse_at) {
+            [px, py] = frame.pulse_at;
+          } else if (frame.pulse && frame.players[frame.pulse]) {
+            [px, py] = frame.players[frame.pulse];
+          } else if (frame.ball) {
+            [px, py] = frame.ball;
+          }
+          if (px !== undefined) {
+            pulse.setAttribute('cx', px);
+            pulse.setAttribute('cy', py);
+            pulse.setAttribute('stroke', '#fbbf24');
+            pulse.setAttribute('opacity', '0.9');
+            setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0.4'); }, 500);
+            setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0.9'); }, 1000);
+            setTimeout(() => { if (pulse) pulse.setAttribute('opacity', '0.5'); }, 1500);
+          }
         }
-      } else if (pulse && !frame.pulse_them) {
-        pulse.setAttribute('opacity', '0');
       }
 
       // Hide previous arrow set, show this frame's
@@ -3552,9 +3628,9 @@ function resetSequence(id) {
 <path id="pass-b1" stroke="white" stroke-width="1.5" stroke-dasharray="3,2" fill="none" opacity="0"/>
 <circle id="pulse-b1" r="14" stroke="#fbbf24" stroke-width="2" fill="none" opacity="0" style="transition: opacity 0.3s;"/>
 <circle id="ball-b1" cx="140" cy="395" r="3" fill="white" stroke="black" stroke-width="0.5" style="transition: cx 0.9s ease-in-out, cy 0.9s ease-in-out;"/>
-<g class="anim-player" id="b1-st1" transform="translate(105,145)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 1</text></g>
-<g class="anim-player" id="b1-st2" transform="translate(175,145)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 2</text></g>
-<g class="anim-player" id="b1-cam" transform="translate(140,210)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">CAM</text></g>
+<g class="anim-player" id="b1-st1" transform="translate(105,140)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 1</text></g>
+<g class="anim-player" id="b1-st2" transform="translate(175,140)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 2</text></g>
+<g class="anim-player" id="b1-cam" transform="translate(140,205)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">CAM</text></g>
 <g class="anim-player" id="b1-dm" transform="translate(140,290)"><circle r="10" fill="#3b82f6"/><text class="player-label" x="0" y="0">DM</text></g>
 <g class="anim-player" id="b1-b2b" transform="translate(175,270)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">B2B</text></g>
 <g class="anim-player" id="b1-lwb" transform="translate(25,290)"><circle r="10" fill="#3b82f6"/><text class="player-label" x="0" y="0">WB</text></g>
@@ -3613,9 +3689,9 @@ function resetSequence(id) {
   <script>
 window.SEQUENCES = window.SEQUENCES || {};
 window.SEQUENCES["b1"] = {
-  initial: {"st1": [105, 145], "st2": [175, 145], "cam": [140, 210], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]},
+  initial: {"st1": [105, 140], "st2": [175, 140], "cam": [140, 205], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]},
   initialBall: [140, 395],
-  frames: [{"players": {"st1": [105, 145], "st2": [175, 145], "cam": [140, 210], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]}, "ball": [140, 395], "duration": 1500, "pulse": "gk", "arrows": "f0"}, {"players": {"st1": [105, 145], "st2": [175, 145], "cam": [140, 210], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]}, "ball": [50, 360], "duration": 1800, "pulse": null, "arrows": "f1", "passFrom": [140, 395], "passTo": [50, 360]}, {"players": {"st1": [105, 145], "st2": [175, 145], "cam": [140, 165], "dm": [130, 285], "b2b": [175, 235], "lwb": [25, 245], "rwb": [255, 245], "lcb": [50, 350], "ccb": [140, 370], "rcb": [230, 350], "gk": [140, 395]}, "ball": [130, 285], "duration": 1800, "pulse": null, "arrows": "f2", "passFrom": [50, 360], "passTo": [130, 285]}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 145], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [20, 195], "duration": 2000, "pulse": null, "arrows": "f3", "passFrom": [130, 285], "passTo": [20, 195]}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [20, 195], "duration": 2000, "pulse": null, "arrows": "f4"}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [140, 150], "duration": 2000, "pulse": null, "arrows": "f5", "passFrom": [20, 195], "passTo": [140, 150]}, {"players": {"st1": [95, 70], "st2": [190, 70], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 195], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [95, 70], "duration": 2200, "pulse": null, "arrows": "f6", "passFrom": [140, 150], "passTo": [95, 70]}]
+  frames: [{"players": {"st1": [105, 140], "st2": [175, 140], "cam": [140, 205], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]}, "ball": [140, 395], "duration": 1500, "pulse": "gk", "arrows": "f0"}, {"players": {"st1": [105, 140], "st2": [175, 140], "cam": [140, 205], "dm": [140, 290], "b2b": [175, 270], "lwb": [25, 290], "rwb": [255, 290], "lcb": [50, 360], "ccb": [140, 370], "rcb": [230, 360], "gk": [140, 395]}, "ball": [50, 360], "duration": 1800, "pulse": null, "arrows": "f1", "passFrom": [140, 395], "passTo": [50, 360]}, {"players": {"st1": [105, 140], "st2": [175, 140], "cam": [140, 165], "dm": [130, 285], "b2b": [175, 235], "lwb": [25, 245], "rwb": [255, 245], "lcb": [50, 350], "ccb": [140, 370], "rcb": [230, 350], "gk": [140, 395]}, "ball": [130, 285], "duration": 1800, "pulse": null, "arrows": "f2", "passFrom": [50, 360], "passTo": [130, 285]}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 145], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [20, 195], "duration": 2000, "pulse": null, "arrows": "f3", "passFrom": [130, 285], "passTo": [20, 195]}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [20, 195], "duration": 2000, "pulse": null, "arrows": "f4"}, {"players": {"st1": [100, 80], "st2": [180, 80], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 215], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [140, 150], "duration": 2000, "pulse": null, "arrows": "f5", "passFrom": [20, 195], "passTo": [140, 150]}, {"players": {"st1": [95, 70], "st2": [190, 70], "cam": [140, 150], "dm": [130, 290], "b2b": [170, 195], "lwb": [20, 195], "rwb": [260, 195], "lcb": [50, 320], "ccb": [140, 335], "rcb": [230, 320], "gk": [140, 395]}, "ball": [95, 70], "duration": 2200, "pulse": null, "arrows": "f6", "passFrom": [140, 150], "passTo": [95, 70]}]
 };
 </script>
 </div>
@@ -3659,9 +3735,9 @@ window.SEQUENCES["b1"] = {
 <path id="pass-b2" stroke="white" stroke-width="1.5" stroke-dasharray="3,2" fill="none" opacity="0"/>
 <circle id="pulse-b2" r="14" stroke="#fbbf24" stroke-width="2" fill="none" opacity="0" style="transition: opacity 0.3s;"/>
 <circle id="ball-b2" cx="140" cy="395" r="3" fill="white" stroke="black" stroke-width="0.5" style="transition: cx 0.9s ease-in-out, cy 0.9s ease-in-out;"/>
-<g class="anim-player" id="b2-st1" transform="translate(90,130)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 1</text></g>
-<g class="anim-player" id="b2-st2" transform="translate(190,130)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 2</text></g>
-<g class="anim-player" id="b2-cam" transform="translate(140,200)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">CAM</text></g>
+<g class="anim-player" id="b2-st1" transform="translate(90,140)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 1</text></g>
+<g class="anim-player" id="b2-st2" transform="translate(190,140)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">ST 2</text></g>
+<g class="anim-player" id="b2-cam" transform="translate(140,205)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">CAM</text></g>
 <g class="anim-player" id="b2-dm" transform="translate(140,280)"><circle r="10" fill="#3b82f6"/><text class="player-label" x="0" y="0">DM</text></g>
 <g class="anim-player" id="b2-b2b" transform="translate(175,250)"><circle r="10" fill="#3b82f6"/><text class="player-label tight" x="0" y="0">B2B</text></g>
 <g class="anim-player" id="b2-lwb" transform="translate(25,290)"><circle r="10" fill="#3b82f6"/><text class="player-label" x="0" y="0">WB</text></g>
@@ -3705,9 +3781,9 @@ window.SEQUENCES["b1"] = {
   <script>
 window.SEQUENCES = window.SEQUENCES || {};
 window.SEQUENCES["b2"] = {
-  initial: {"st1": [90, 130], "st2": [190, 130], "cam": [140, 200], "dm": [140, 280], "b2b": [175, 250], "lwb": [25, 290], "rwb": [255, 290], "lcb": [60, 355], "ccb": [140, 365], "rcb": [220, 355], "gk": [140, 395]},
+  initial: {"st1": [90, 140], "st2": [190, 140], "cam": [140, 205], "dm": [140, 280], "b2b": [175, 250], "lwb": [25, 290], "rwb": [255, 290], "lcb": [60, 355], "ccb": [140, 365], "rcb": [220, 355], "gk": [140, 395]},
   initialBall: [140, 395],
-  frames: [{"players": {"st1": [90, 130], "st2": [190, 130], "cam": [140, 200], "dm": [140, 280], "b2b": [175, 250], "lwb": [25, 290], "rwb": [255, 290], "lcb": [60, 355], "ccb": [140, 365], "rcb": [220, 355], "gk": [140, 395]}, "ball": [140, 395], "duration": 1500, "pulse": "gk", "arrows": "f0"}, {"players": {"st1": [90, 130], "st2": [190, 130], "cam": [140, 180], "dm": [95, 365], "b2b": [170, 230], "lwb": [25, 290], "rwb": [255, 290], "lcb": [45, 355], "ccb": [155, 365], "rcb": [225, 355], "gk": [140, 395]}, "ball": [140, 395], "duration": 1800, "pulse": null, "arrows": "f1"}, {"players": {"st1": [90, 130], "st2": [190, 130], "cam": [140, 180], "dm": [95, 365], "b2b": [170, 230], "lwb": [25, 290], "rwb": [255, 290], "lcb": [45, 355], "ccb": [155, 365], "rcb": [225, 355], "gk": [140, 395]}, "ball": [95, 365], "duration": 1800, "pulse": null, "arrows": "f2", "passFrom": [140, 395], "passTo": [95, 365]}, {"players": {"st1": [95, 85], "st2": [190, 85], "cam": [135, 165], "dm": [110, 340], "b2b": [170, 220], "lwb": [20, 220], "rwb": [260, 220], "lcb": [50, 340], "ccb": [155, 350], "rcb": [220, 340], "gk": [140, 395]}, "ball": [170, 220], "duration": 2000, "pulse": null, "arrows": "f3", "passFrom": [95, 365], "passTo": [170, 220]}, {"players": {"st1": [75, 60], "st2": [200, 80], "cam": [135, 130], "dm": [115, 320], "b2b": [170, 200], "lwb": [25, 200], "rwb": [255, 200], "lcb": [55, 320], "ccb": [155, 335], "rcb": [225, 320], "gk": [140, 395]}, "ball": [75, 60], "duration": 2200, "pulse": null, "arrows": "f4", "passFrom": [170, 220], "passTo": [75, 60]}]
+  frames: [{"players": {"st1": [90, 140], "st2": [190, 140], "cam": [140, 205], "dm": [140, 280], "b2b": [175, 250], "lwb": [25, 290], "rwb": [255, 290], "lcb": [60, 355], "ccb": [140, 365], "rcb": [220, 355], "gk": [140, 395]}, "ball": [140, 395], "duration": 1500, "pulse": "gk", "arrows": "f0"}, {"players": {"st1": [90, 140], "st2": [190, 140], "cam": [140, 180], "dm": [95, 365], "b2b": [170, 230], "lwb": [25, 290], "rwb": [255, 290], "lcb": [45, 355], "ccb": [155, 365], "rcb": [225, 355], "gk": [140, 395]}, "ball": [140, 395], "duration": 1800, "pulse": null, "arrows": "f1"}, {"players": {"st1": [90, 140], "st2": [190, 140], "cam": [140, 180], "dm": [95, 365], "b2b": [170, 230], "lwb": [25, 290], "rwb": [255, 290], "lcb": [45, 355], "ccb": [155, 365], "rcb": [225, 355], "gk": [140, 395]}, "ball": [95, 365], "duration": 1800, "pulse": null, "arrows": "f2", "passFrom": [140, 395], "passTo": [95, 365]}, {"players": {"st1": [95, 85], "st2": [190, 85], "cam": [135, 165], "dm": [110, 340], "b2b": [170, 220], "lwb": [20, 220], "rwb": [260, 220], "lcb": [50, 340], "ccb": [155, 350], "rcb": [220, 340], "gk": [140, 395]}, "ball": [170, 220], "duration": 2000, "pulse": null, "arrows": "f3", "passFrom": [95, 365], "passTo": [170, 220]}, {"players": {"st1": [75, 60], "st2": [200, 80], "cam": [135, 130], "dm": [115, 320], "b2b": [170, 200], "lwb": [25, 200], "rwb": [255, 200], "lcb": [55, 320], "ccb": [155, 335], "rcb": [225, 320], "gk": [140, 395]}, "ball": [75, 60], "duration": 2200, "pulse": null, "arrows": "f4", "passFrom": [170, 220], "passTo": [75, 60]}]
 };
 </script>
 </div>
@@ -3730,6 +3806,8 @@ window.SEQUENCES["b2"] = {
 <div class="opp-shape-block">
   <h3 class="opp-shape-title">vs 4-4-2</h3>
   
+<details class="opp-text-details">
+<summary class="opp-text-summary">📋 Tactical notes (matchups, key players, what to watch)</summary>
 <div class="opp-text-card">
   <div class="opp-text-section">
     <div class="opp-text-label">The Situation</div>
@@ -3752,6 +3830,7 @@ window.SEQUENCES["b2"] = {
     <p>Wide CBs. Isolated 1v1 with their wingers all game. Pace and discipline.</p>
   </div>
 </div>
+</details>
 
   
 <div class="press-pattern">
@@ -3815,10 +3894,16 @@ window.SEQUENCES["b2"] = {
 <text x="50" y="180" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">ST v CB</text>
 </g>
 <g id="arrows-v442d-f2" style="opacity:0; transition: opacity 0.5s ease-in;">
-<path d="M 40 332 L 45 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
-<path d="M 240 332 L 235 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
-<path d="M 140 350 L 140 325" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
+<path d="M 40 332 L 45 250" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
+<path d="M 240 332 L 235 250" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
+<path d="M 140 350 L 140 290" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v442d-y)" stroke-dasharray="2,2"/>
 <text x="140" y="365" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">BACKLINE STEPS UP — COMPRESS</text>
+</g>
+<g id="arrows-v442d-f3" style="opacity:0; transition: opacity 0.5s ease-in;">
+<line x1="40" y1="245" x2="38" y2="220" stroke="#fbbf24" stroke-width="2"/>
+<text x="55" y="240" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">LWB JUMPS</text>
+<text x="140" y="380" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">FORCED WIDE — SIDE SHIFTS</text>
+<text x="140" y="390" fill="#fbbf24" font-size="6" text-anchor="middle" font-family="JetBrains Mono">FAR WB TUCKS IN — BACK FOUR</text>
 </g>
 </svg>
   </div>
@@ -3827,14 +3912,14 @@ window.SEQUENCES["b2"] = {
     <button class="anim-btn" onclick="resetSequence('v442d')">⟲ Reset</button>
   </div>
   <div class="pattern-key">
-    <ul><li><strong>Stage 1:</strong> They have it at LCB (yellow pulse)</li><li><strong>Stage 2:</strong> Ball into their LCM — DM jumps to press, B2B matches RCM</li><li><strong>Stage 3:</strong> Whole backline steps up TOGETHER — compress the space, force the mistake</li><li><strong>STs vs their STs</strong> — match up, screen pass back to CBs</li><li><strong>CAM</strong> has free role — disrupt, screen ball-side CM</li><li><strong>Backline ALWAYS moves as one unit</strong> — never split</li><li><strong>Spare CB at the back</strong> — we have one extra defender, sweep up</li></ul>
+    <ul><li><strong>Stage 1:</strong> They have it at LCB (yellow pulse on opposition)</li><li><strong>Stage 2:</strong> Ball into their LCM — DM jumps to press, B2B matches RCM</li><li><strong>Stage 3:</strong> Whole backline steps up TOGETHER — compress the space</li><li><strong>Stage 4:</strong> They're forced wide — LWB jumps, far-side WB tucks in to make a back four</li><li><strong>STs vs their STs</strong> — match up, screen pass back to CBs</li><li><strong>CAM</strong> has free role — disrupt, screen ball-side CM</li><li><strong>Backline ALWAYS moves as one unit</strong> — never split</li><li><strong>Spare CB at the back</strong> — we have one extra defender, sweep up</li></ul>
   </div>
   <script>
 window.SEQUENCES = window.SEQUENCES || {};
 window.SEQUENCES["v442d"] = {
   initial: {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]},
   initialBall: [105, 155],
-  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [105, 155], "duration": 1800, "pulse_at": [105, 155], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 215], "dm": [110, 220], "b2b": [170, 230], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [110, 225], "duration": 2000, "pulse_at": [110, 225], "arrows": "f1", "passFrom": [105, 155], "passTo": [110, 225]}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 215], "dm": [110, 240], "b2b": [170, 240], "lwb": [45, 245], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [235, 245], "gk": [140, 380]}, "ball": [110, 225], "duration": 2200, "pulse": null, "arrows": "f2"}]
+  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [105, 155], "duration": 1800, "pulse_at": [105, 155], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 215], "dm": [110, 220], "b2b": [170, 230], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [110, 225], "duration": 2000, "pulse_at": [110, 225], "arrows": "f1", "passFrom": [105, 155], "passTo": [110, 225]}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 215], "dm": [110, 240], "b2b": [170, 240], "lwb": [45, 245], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [235, 245], "gk": [140, 380]}, "ball": [110, 225], "duration": 2200, "pulse": null, "arrows": "f2"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 215], "dm": [90, 235], "b2b": [150, 230], "lwb": [40, 215], "lcb": [75, 250], "ccb": [130, 270], "rcb": [190, 270], "rwb": [215, 240], "gk": [140, 380]}, "ball": [35, 215], "duration": 2200, "pulse_at": [35, 215], "arrows": "f3", "passFrom": [110, 225], "passTo": [35, 215]}]
 };
 </script>
 </div>
@@ -3938,6 +4023,8 @@ window.SEQUENCES["v442a"] = {
 <div class="opp-shape-block">
   <h3 class="opp-shape-title">vs 4-3-3</h3>
   
+<details class="opp-text-details">
+<summary class="opp-text-summary">📋 Tactical notes (matchups, key players, what to watch)</summary>
 <div class="opp-text-card">
   <div class="opp-text-section">
     <div class="opp-text-label">The Situation</div>
@@ -3960,6 +4047,7 @@ window.SEQUENCES["v442a"] = {
     <p>CAM. If you don't lock down their CDM, they pick us apart. Stick to him man-to-man.</p>
   </div>
 </div>
+</details>
 
   
 <div class="press-pattern">
@@ -4023,10 +4111,16 @@ window.SEQUENCES["v442a"] = {
 <text x="200" y="245" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">B2B v 8</text>
 </g>
 <g id="arrows-v433d-f2" style="opacity:0; transition: opacity 0.5s ease-in;">
-<path d="M 40 332 L 40 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
-<path d="M 240 332 L 240 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
-<path d="M 140 350 L 140 325" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
+<path d="M 40 332 L 40 245" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
+<path d="M 240 332 L 240 245" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
+<path d="M 140 350 L 140 290" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v433d-y)" stroke-dasharray="2,2"/>
 <text x="140" y="365" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">BACKLINE STEPS UP TOGETHER</text>
+</g>
+<g id="arrows-v433d-f3" style="opacity:0; transition: opacity 0.5s ease-in;">
+<line x1="55" y1="245" x2="48" y2="262" stroke="#fbbf24" stroke-width="2"/>
+<line x1="60" y1="270" x2="50" y2="262" stroke="#fbbf24" stroke-width="2"/>
+<text x="80" y="255" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">LCB + LWB DOUBLE</text>
+<text x="140" y="380" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">FORCED WIDE — TRAP HIM</text>
 </g>
 </svg>
   </div>
@@ -4035,14 +4129,14 @@ window.SEQUENCES["v442a"] = {
     <button class="anim-btn" onclick="resetSequence('v433d')">⟲ Reset</button>
   </div>
   <div class="pattern-key">
-    <ul><li><strong>Stage 1:</strong> Their CDM has the ball (yellow pulse)</li><li><strong>Stage 2:</strong> CAM steps up onto their CDM. DM and B2B match their #8s</li><li><strong>Stage 3:</strong> Backline steps up TOGETHER — compress the gap, force a long ball</li><li><strong>STs press their CBs</strong> — force them long</li><li><strong>Wide CBs vs wingers</strong> — pace match</li><li><strong>WBs vs FBs</strong> — jump when ball goes wide</li><li><strong>If their CDM drops between CBs</strong> — STs press the back three, CAM follows the CDM</li></ul>
+    <ul><li><strong>Stage 1:</strong> Their CDM has the ball (yellow pulse on opposition)</li><li><strong>Stage 2:</strong> CAM steps up onto their CDM. DM and B2B match their #8s</li><li><strong>Stage 3:</strong> Backline steps up TOGETHER — compress the gap</li><li><strong>Stage 4:</strong> Forced wide to LW — wide CB and LWB DOUBLE UP, trap him</li><li><strong>STs press their CBs</strong> — force them long</li><li><strong>Wide CBs vs wingers</strong> — pace match</li><li><strong>WBs vs FBs</strong> — jump when ball goes wide</li><li><strong>If their CDM drops between CBs</strong> — STs press the back three, CAM follows the CDM</li></ul>
   </div>
   <script>
 window.SEQUENCES = window.SEQUENCES || {};
 window.SEQUENCES["v433d"] = {
   initial: {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]},
   initialBall: [140, 235],
-  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 235], "duration": 1800, "pulse_at": [140, 235], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 220], "dm": [95, 240], "b2b": [185, 240], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 235], "duration": 2000, "pulse": null, "arrows": "f1"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 220], "dm": [95, 240], "b2b": [185, 240], "lwb": [40, 270], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [240, 270], "gk": [140, 380]}, "ball": [140, 235], "duration": 2200, "pulse": null, "arrows": "f2"}]
+  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 235], "duration": 1800, "pulse_at": [140, 235], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 220], "dm": [95, 240], "b2b": [185, 240], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 235], "duration": 2000, "pulse": null, "arrows": "f1"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 220], "dm": [95, 240], "b2b": [185, 240], "lwb": [40, 270], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [240, 270], "gk": [140, 380]}, "ball": [140, 235], "duration": 2200, "pulse": null, "arrows": "f2"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 220], "dm": [90, 235], "b2b": [150, 230], "lwb": [45, 240], "lcb": [60, 250], "ccb": [130, 270], "rcb": [190, 270], "rwb": [215, 240], "gk": [140, 380]}, "ball": [45, 260], "duration": 2200, "pulse_at": [45, 260], "arrows": "f3", "passFrom": [140, 235], "passTo": [45, 260]}]
 };
 </script>
 </div>
@@ -4146,6 +4240,8 @@ window.SEQUENCES["v433a"] = {
 <div class="opp-shape-block">
   <h3 class="opp-shape-title">vs 4-2-3-1</h3>
   
+<details class="opp-text-details">
+<summary class="opp-text-summary">📋 Tactical notes (matchups, key players, what to watch)</summary>
 <div class="opp-text-card">
   <div class="opp-text-section">
     <div class="opp-text-label">The Situation</div>
@@ -4168,6 +4264,7 @@ window.SEQUENCES["v433a"] = {
     <p>CAM (defensively, marking their #10) and CAM (offensively, finding the pocket). Same player, both roles.</p>
   </div>
 </div>
+</details>
 
   
 <div class="press-pattern">
@@ -4231,10 +4328,16 @@ window.SEQUENCES["v433a"] = {
 <text x="200" y="225" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">B2B v CM</text>
 </g>
 <g id="arrows-v4231d-f2" style="opacity:0; transition: opacity 0.5s ease-in;">
-<path d="M 40 332 L 40 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
-<path d="M 240 332 L 240 310" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
-<path d="M 140 350 L 140 325" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
+<path d="M 40 332 L 40 245" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
+<path d="M 240 332 L 240 245" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
+<path d="M 140 350 L 140 290" stroke="#fbbf24" stroke-width="1.8" fill="none" marker-end="url(#ar-v4231d-y)" stroke-dasharray="2,2"/>
 <text x="140" y="365" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">BACKLINE STEPS UP TOGETHER</text>
+</g>
+<g id="arrows-v4231d-f3" style="opacity:0; transition: opacity 0.5s ease-in;">
+<line x1="55" y1="240" x2="50" y2="252" stroke="#fbbf24" stroke-width="2"/>
+<line x1="60" y1="252" x2="52" y2="252" stroke="#fbbf24" stroke-width="2"/>
+<text x="80" y="240" fill="#fbbf24" font-size="6" font-family="JetBrains Mono">LCB + LWB TRAP</text>
+<text x="140" y="380" fill="#fbbf24" font-size="6.5" text-anchor="middle" font-family="JetBrains Mono">FORCED WIDE</text>
 </g>
 </svg>
   </div>
@@ -4243,14 +4346,14 @@ window.SEQUENCES["v433a"] = {
     <button class="anim-btn" onclick="resetSequence('v4231d')">⟲ Reset</button>
   </div>
   <div class="pattern-key">
-    <ul><li><strong>Stage 1:</strong> Their #10 has the ball (yellow pulse)</li><li><strong>Stage 2:</strong> CAM jumps onto #10. DM and B2B match their double pivot</li><li><strong>Stage 3:</strong> Backline steps up — compress the space, deny their wingers space behind</li><li><strong>STs press their CBs</strong></li><li><strong>WBs vs their wingers</strong></li><li><strong>If their #10 drops deep</strong> — CAM follows, B2B covers</li><li><strong>Danger:</strong> their lone striker dropping. STs DON'T follow — wide CBs handle</li></ul>
+    <ul><li><strong>Stage 1:</strong> Their #10 has the ball (yellow pulse on opposition)</li><li><strong>Stage 2:</strong> CAM jumps onto #10. DM and B2B match their double pivot</li><li><strong>Stage 3:</strong> Backline steps up — compress the space</li><li><strong>Stage 4:</strong> Forced wide to LW — wide CB and LWB trap him</li><li><strong>STs press their CBs</strong></li><li><strong>WBs vs their wingers</strong></li><li><strong>If their #10 drops deep</strong> — CAM follows, B2B covers</li><li><strong>Danger:</strong> their lone striker dropping. STs DON'T follow — wide CBs handle</li></ul>
   </div>
   <script>
 window.SEQUENCES = window.SEQUENCES || {};
 window.SEQUENCES["v4231d"] = {
   initial: {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]},
   initialBall: [140, 245],
-  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 245], "duration": 1800, "pulse_at": [140, 245], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 230], "dm": [110, 220], "b2b": [170, 220], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 245], "duration": 2000, "pulse": null, "arrows": "f1"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 230], "dm": [110, 220], "b2b": [170, 220], "lwb": [40, 270], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [240, 270], "gk": [140, 380]}, "ball": [140, 245], "duration": 2200, "pulse": null, "arrows": "f2"}]
+  frames: [{"players": {"st1": [115, 195], "st2": [165, 195], "cam": [140, 240], "dm": [110, 290], "b2b": [170, 290], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 245], "duration": 1800, "pulse_at": [140, 245], "arrows": "f0"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 230], "dm": [110, 220], "b2b": [170, 220], "lwb": [40, 335], "lcb": [85, 345], "ccb": [140, 350], "rcb": [195, 345], "rwb": [240, 335], "gk": [140, 380]}, "ball": [140, 245], "duration": 2000, "pulse": null, "arrows": "f1"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 230], "dm": [110, 220], "b2b": [170, 220], "lwb": [40, 270], "lcb": [85, 280], "ccb": [140, 285], "rcb": [195, 280], "rwb": [240, 270], "gk": [140, 380]}, "ball": [140, 245], "duration": 2200, "pulse": null, "arrows": "f2"}, {"players": {"st1": [110, 165], "st2": [170, 165], "cam": [140, 230], "dm": [90, 235], "b2b": [150, 230], "lwb": [45, 230], "lcb": [60, 245], "ccb": [130, 270], "rcb": [190, 270], "rwb": [215, 240], "gk": [140, 380]}, "ball": [50, 245], "duration": 2200, "pulse_at": [50, 245], "arrows": "f3", "passFrom": [140, 245], "passTo": [50, 245]}]
 };
 </script>
 </div>
@@ -4350,6 +4453,8 @@ window.SEQUENCES["v4231a"] = {
 <div class="opp-shape-block">
   <h3 class="opp-shape-title">vs Low Block (parking the bus)</h3>
   
+<details class="opp-text-details">
+<summary class="opp-text-summary">📋 Tactical notes (matchups, key players, what to watch)</summary>
 <div class="opp-text-card">
   <div class="opp-text-section">
     <div class="opp-text-label">The Situation</div>
@@ -4368,6 +4473,7 @@ window.SEQUENCES["v4231a"] = {
     <p>WBs and STs. WBs need to attack 1v1. STs attack the box on every cross.</p>
   </div>
 </div>
+</details>
 
   
 <div class="press-pattern">
@@ -4478,6 +4584,8 @@ window.SEQUENCES["vlow"] = {
 <div class="opp-shape-block">
   <h3 class="opp-shape-title">vs High Press</h3>
   
+<details class="opp-text-details">
+<summary class="opp-text-summary">📋 Tactical notes (matchups, key players, what to watch)</summary>
 <div class="opp-text-card">
   <div class="opp-text-section">
     <div class="opp-text-label">The Situation</div>
@@ -4496,6 +4604,7 @@ window.SEQUENCES["vlow"] = {
     <p>DM (drops in to overload), GK (calm distribution), LWB (drops into space when their winger jumps to press).</p>
   </div>
 </div>
+</details>
 
   
 <div class="press-pattern">
@@ -4658,5 +4767,30 @@ window.SEQUENCES["vhigh"] = {
 
 <div class="footer-note">BLACKBURN BULLS // DIV 2 VICTORIAN CHURCHES LEAGUE</div>
 </div>
+
+<script>
+// PERFORMANCE: only enable will-change on animations when they are visible
+// This stops 15+ animations all sitting in GPU memory simultaneously
+(function() {
+  if (!('IntersectionObserver' in window)) return;
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      const wrap = entry.target;
+      if (entry.isIntersecting) {
+        wrap.classList.add('in-view');
+      } else {
+        wrap.classList.remove('in-view');
+        // Pause any active playback when scrolled away
+        wrap.classList.remove('playing');
+      }
+    });
+  }, { rootMargin: '100px' });
+
+  document.querySelectorAll('.animated-pitch').forEach(el => observer.observe(el));
+})();
+
+// PERFORMANCE: defer the loading of all SEQUENCES/PATTERNS data
+// (already loaded inline by individual scripts but we keep playback handlers idle until interaction)
+</script>
 </body>
 </html>
